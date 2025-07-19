@@ -20,7 +20,8 @@ FRAME_MS = 30
 VAD_AGGRESSIVENESS = 2
 SILENCE_DURATION_SEC = 1.0
 PORCUPINE_ACCESS_KEY = ""  # ← Replace w/ key
-WAKE_WORD = "computer"  # Can be: "jarvis", "terminator", etc.
+WAKE_WORD = "computer"
+SLEEP_WORD = "terminator"  # Using available keyword instead of "twizzlers"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Load Whisper model once
@@ -32,16 +33,22 @@ vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
 # Queue to pass audio frames
 audio_queue = queue.Queue()
 
-# Wake-word detector
+# Global state for transcription mode
+transcribing = False
+
+# Wake-word and sleep-word detectors
 porcupine = pvporcupine.create(
     access_key=PORCUPINE_ACCESS_KEY,
-    keywords=[WAKE_WORD]
+    keywords=[WAKE_WORD, SLEEP_WORD]
 )
 
 def wakeword_listener():
-    """Wait for the wake word before allowing transcription."""
-    print("🎤 Say the wake word to begin (e.g. 'Hey Computer')...")
-
+    """Wait for the wake word to begin or sleep word to stop transcription."""
+    global transcribing
+    
+    if not transcribing:
+        print("🎤 Say 'computer' to begin transcribing...")
+    
     with sd.InputStream(
         samplerate=porcupine.sample_rate,
         blocksize=porcupine.frame_length,
@@ -52,9 +59,23 @@ def wakeword_listener():
         while True:
             pcm = stream.read(porcupine.frame_length)[0].flatten()
             result = porcupine.process(pcm)
-            if result >= 0:
-                print("✅ Wake word detected!")
-                break
+            
+            if result == 0:  # Wake word detected
+                if not transcribing:
+                    transcribing = True
+                    print("✅ Wake word detected! Now transcribing...")
+                    return
+            elif result == 1:  # Sleep word detected
+                if transcribing:
+                    transcribing = False
+                    print("💤 Sleep word detected! Stopping transcription...")
+                    # Clear audio queue when sleep word is detected via wake word detection
+                    try:
+                        while True:
+                            audio_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    return
 
 def audio_callback(indata, frames, time_info, status):
     if status:
@@ -63,11 +84,34 @@ def audio_callback(indata, frames, time_info, status):
     audio_queue.put(pcm_data)
 
 def record_and_transcribe():
+    global transcribing
     buffer = bytearray()
     silence_start = None
 
     while True:
-        frame = audio_queue.get()
+        if not transcribing:
+            # Clear any accumulated audio when not transcribing
+            try:
+                while True:
+                    audio_queue.get_nowait()
+            except queue.Empty:
+                pass
+            buffer.clear()
+            silence_start = None
+            wakeword_listener()
+            # Clear queue again after wake word detection to avoid processing old audio
+            try:
+                while True:
+                    audio_queue.get_nowait()
+            except queue.Empty:
+                pass
+            continue
+
+        try:
+            frame = audio_queue.get(timeout=0.1)
+        except queue.Empty:
+            continue
+
         is_speech = vad.is_speech(frame, SAMPLE_RATE)
 
         if is_speech:
@@ -78,6 +122,7 @@ def record_and_transcribe():
                 if silence_start is None:
                     silence_start = time.time()
                 elif time.time() - silence_start > SILENCE_DURATION_SEC:
+                    # Save audio to temporary file
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                         wf = wave.open(tmp.name, "wb")
                         wf.setnchannels(CHANNELS)
@@ -86,6 +131,7 @@ def record_and_transcribe():
                         wf.writeframes(buffer)
                         wf.close()
 
+                    # Transcribe audio
                     result = model.transcribe(tmp.name)
                     os.unlink(tmp.name)
                     text = result["text"].strip()
@@ -93,19 +139,34 @@ def record_and_transcribe():
                     silence_start = None
 
                     if text:
+                        # Check if the transcribed text contains the sleep word
+                        if SLEEP_WORD.lower() in text.lower():
+                            print(f"📝 You said: {text}")
+                            print("💤 Sleep word detected in transcription! Stopping...")
+                            transcribing = False
+                            # Clear the audio queue immediately when sleep word is detected
+                            try:
+                                while True:
+                                    audio_queue.get_nowait()
+                            except queue.Empty:
+                                pass
+                            continue
+                        
                         print(f"📝 You said: {text}")
                         pyperclip.copy(text)
                         pyautogui.hotkey("ctrl", "v")
                         time.sleep(0.2)
-                    
-                    # Listen for wake word again after each transcription
-                    print("👂 Awaiting new wake word…")
-                    wakeword_listener()
 
 def main():
-    print("🔊 Starting voice system with wake word...")
-    wakeword_listener()
-
+    global transcribing
+    
+    print("🔊 Starting voice system with wake/sleep words...")
+    print("🎤 Wake word: 'computer' (starts transcribing)")
+    print("💤 Sleep word: 'terminator' (stops transcribing)")
+    
+    # Start with transcription off
+    transcribing = False
+    
     with sd.InputStream(
         samplerate=SAMPLE_RATE,
         channels=CHANNELS,
