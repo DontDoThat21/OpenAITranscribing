@@ -19,7 +19,7 @@ CHANNELS = 1
 FRAME_MS = 30
 VAD_AGGRESSIVENESS = 2
 SILENCE_DURATION_SEC = 1.0
-PORCUPINE_ACCESS_KEY =                                                              ""  # ← Replace with your actual key                                         //
+PORCUPINE_ACCESS_KEY = ""  # ← Replace w/ key
 WAKE_WORD = "computer"  # Can be: "jarvis", "terminator", etc.
 # ─────────────────────────────────────────────────────────────────────────────
 
