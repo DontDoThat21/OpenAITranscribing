@@ -8,7 +8,7 @@ Register your free key, and you're ready to rock'n'roll: https://picovoice.ai/pl
 
 # OpenAITranscribing
 
-![Project Image]([https://avatars.githubusercontent.com/u/46426868?v=4](https://github.com/user-attachments/assets/637ba197-f983-427f-b104-0dd08423175a))
+![Project Image]([https://avatars.githubusercontent.com/u/46426868?v=4](https://github.com/user-attachments/assets/637ba197-f983-427f-b104-0dd08423175a])
 
 OpenAITranscribing is a free and open-source tool for effortless voice transcription powered by Python and OpenAI.
 
