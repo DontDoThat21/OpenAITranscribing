@@ -136,12 +136,11 @@ def record_and_transcribe():
                         try:
                             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                                 temp_file = tmp.name
-                                wf = wave.open(tmp.name, "wb")
-                                wf.setnchannels(CHANNELS)
-                                wf.setsampwidth(2)
-                                wf.setframerate(SAMPLE_RATE)
-                                wf.writeframes(buffer)
-                                wf.close()
+                                with wave.open(tmp.name, "wb") as wf:
+                                    wf.setnchannels(CHANNELS)
+                                    wf.setsampwidth(2)
+                                    wf.setframerate(SAMPLE_RATE)
+                                    wf.writeframes(buffer)
 
                             # Transcribe audio
                             result = model.transcribe(temp_file)
