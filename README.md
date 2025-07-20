@@ -5,9 +5,6 @@ Free transcribing.
 Enjoy.
 Register your free key, and you're ready to rock'n'roll: https://picovoice.ai/platform/porcupine/
 
-
-# OpenAITranscribing
-
 OpenAITranscribing is a free and open-source tool for effortless voice transcription powered by Python and OpenAI.
 
 ## Features
