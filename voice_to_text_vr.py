@@ -22,6 +22,9 @@ SILENCE_DURATION_SEC = 1.0
 PORCUPINE_ACCESS_KEY = ""  # ← Replace w/ key
 WAKE_WORD = "computer"
 SLEEP_WORD = "terminator"  # Using available keyword instead of "twizzlers"
+# Storage optimization settings
+MAX_BUFFER_SIZE_MB = 50  # Maximum audio buffer size in MB
+BUFFER_CHECK_INTERVAL = 100  # Check buffer size every N frames
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Load Whisper model once
@@ -87,6 +90,7 @@ def record_and_transcribe():
     global transcribing
     buffer = bytearray()
     silence_start = None
+    frame_count = 0
 
     while True:
         if not transcribing:
@@ -98,6 +102,7 @@ def record_and_transcribe():
                 pass
             buffer.clear()
             silence_start = None
+            frame_count = 0
             wakeword_listener()
             # Clear queue again after wake word detection to avoid processing old audio
             try:
@@ -117,45 +122,106 @@ def record_and_transcribe():
         if is_speech:
             buffer.extend(frame)
             silence_start = None
+            
+            # Check buffer size periodically to prevent excessive memory usage
+            frame_count += 1
+            if frame_count % BUFFER_CHECK_INTERVAL == 0:
+                buffer_size_mb = len(buffer) / (1024 * 1024)
+                if buffer_size_mb > MAX_BUFFER_SIZE_MB:
+                    print(f"⚠️  Buffer size ({buffer_size_mb:.1f}MB) exceeded limit. Processing current audio...")
+                    # Force processing of current buffer to free memory
+                    if buffer:
+                        # Save audio to temporary file with proper cleanup
+                        temp_file = None
+                        try:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                                temp_file = tmp.name
+                                wf = wave.open(tmp.name, "wb")
+                                wf.setnchannels(CHANNELS)
+                                wf.setsampwidth(2)
+                                wf.setframerate(SAMPLE_RATE)
+                                wf.writeframes(buffer)
+                                wf.close()
+
+                            # Transcribe audio
+                            result = model.transcribe(temp_file)
+                            text = result["text"].strip()
+                            
+                            if text:
+                                print(f"📝 You said: {text}")
+                                pyperclip.copy(text)
+                                pyautogui.hotkey("ctrl", "v")
+                                time.sleep(0.2)
+                        
+                        except Exception as e:
+                            print(f"❌ Error during transcription: {e}")
+                        
+                        finally:
+                            # Ensure temp file is always cleaned up
+                            if temp_file and os.path.exists(temp_file):
+                                try:
+                                    os.unlink(temp_file)
+                                except OSError as e:
+                                    print(f"⚠️  Warning: Could not delete temp file {temp_file}: {e}")
+                        
+                        buffer.clear()
+                        frame_count = 0
         else:
             if buffer:
                 if silence_start is None:
                     silence_start = time.time()
                 elif time.time() - silence_start > SILENCE_DURATION_SEC:
-                    # Save audio to temporary file
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                        wf = wave.open(tmp.name, "wb")
-                        wf.setnchannels(CHANNELS)
-                        wf.setsampwidth(2)
-                        wf.setframerate(SAMPLE_RATE)
-                        wf.writeframes(buffer)
-                        wf.close()
+                    # Save audio to temporary file with proper cleanup
+                    temp_file = None
+                    try:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                            temp_file = tmp.name
+                            wf = wave.open(tmp.name, "wb")
+                            wf.setnchannels(CHANNELS)
+                            wf.setsampwidth(2)
+                            wf.setframerate(SAMPLE_RATE)
+                            wf.writeframes(buffer)
+                            wf.close()
 
-                    # Transcribe audio
-                    result = model.transcribe(tmp.name)
-                    os.unlink(tmp.name)
-                    text = result["text"].strip()
+                        # Transcribe audio
+                        result = model.transcribe(temp_file)
+                        text = result["text"].strip()
+                        
+                        if text:
+                            # Check if the transcribed text contains the sleep word
+                            if SLEEP_WORD.lower() in text.lower():
+                                print(f"📝 You said: {text}")
+                                print("💤 Sleep word detected in transcription! Stopping...")
+                                transcribing = False
+                                # Clear the audio queue immediately when sleep word is detected
+                                try:
+                                    while True:
+                                        audio_queue.get_nowait()
+                                except queue.Empty:
+                                    pass
+                                buffer.clear()
+                                frame_count = 0
+                                continue
+                            
+                            print(f"📝 You said: {text}")
+                            pyperclip.copy(text)
+                            pyautogui.hotkey("ctrl", "v")
+                            time.sleep(0.2)
+                    
+                    except Exception as e:
+                        print(f"❌ Error during transcription: {e}")
+                    
+                    finally:
+                        # Ensure temp file is always cleaned up
+                        if temp_file and os.path.exists(temp_file):
+                            try:
+                                os.unlink(temp_file)
+                            except OSError as e:
+                                print(f"⚠️  Warning: Could not delete temp file {temp_file}: {e}")
+                    
                     buffer.clear()
                     silence_start = None
-
-                    if text:
-                        # Check if the transcribed text contains the sleep word
-                        if SLEEP_WORD.lower() in text.lower():
-                            print(f"📝 You said: {text}")
-                            print("💤 Sleep word detected in transcription! Stopping...")
-                            transcribing = False
-                            # Clear the audio queue immediately when sleep word is detected
-                            try:
-                                while True:
-                                    audio_queue.get_nowait()
-                            except queue.Empty:
-                                pass
-                            continue
-                        
-                        print(f"📝 You said: {text}")
-                        pyperclip.copy(text)
-                        pyautogui.hotkey("ctrl", "v")
-                        time.sleep(0.2)
+                    frame_count = 0
 
 def main():
     global transcribing
