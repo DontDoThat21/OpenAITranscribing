@@ -188,7 +188,7 @@ def setup_global_hotkey():
         
         # Register the hotkey combination
         hotkey_listener = keyboard.GlobalHotKeys({
-            '<ctrl>+-': hotkey_handler  # Ctrl + minus (should work with numpad minus too)
+            '<ctrl>+<alt>+t': hotkey_handler  # Ctrl + Alt + T
         })
         
         hotkey_listener.start()
