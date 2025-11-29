@@ -28,7 +28,7 @@ FRAME_MS = 30
 VAD_AGGRESSIVENESS = 2
 SILENCE_DURATION_SEC = 1.0
 ONE_TIME_RECORD_DURATION_SEC = 10.0  # Maximum recording time for one-time transcription
-PORCUPINE_ACCESS_KEY = "lbQsD10qjCDdlmBpstMgspJs3RtsDlTppzQRqRuWhrmsVMqc2B+E9Q=="  # ← Replace w/ key
+PORCUPINE_ACCESS_KEY = "your_key"  # ← Replace w/ key
 WAKE_WORD = "computer"
 SLEEP_WORD = "terminator"  # Using available keyword instead of "twizzlers"
 # Storage optimization settings
