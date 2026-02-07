@@ -1,8 +1,10 @@
 webrtcvad
-openai-whisper
+faster-whisper
 sounddevice
 numpy
 pyperclip
 pyautogui
 pvporcupine
 pynput
+torch
+nvidia-ml-py3

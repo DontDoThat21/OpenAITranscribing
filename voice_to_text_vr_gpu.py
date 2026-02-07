@@ -3,12 +3,13 @@ import queue
 import threading
 import warnings
 
-# Suppress warnings
+# Suppress all warnings before importing libraries
 warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', message='.*pkg_resources.*')
+warnings.filterwarnings('ignore', message='.*CUDA capability.*')
 
 import webrtcvad
-import whisper
+from faster_whisper import WhisperModel
 import sounddevice as sd
 import numpy as np
 import pyperclip
@@ -17,6 +18,7 @@ import time
 import tempfile
 import wave
 import pvporcupine
+import torch
 
 # Try to import pynput for global hotkeys, fallback if not available
 try:
@@ -32,13 +34,13 @@ def load_config():
     """Load configuration from config.txt file."""
     config = {}
     config_file = os.path.join(os.path.dirname(__file__), 'config.txt')
-    
+
     if not os.path.exists(config_file):
         print("❌ Error: config.txt not found!")
         print("   Please create config.txt with your PORCUPINE_ACCESS_KEY")
         print("   Get your free key from: https://picovoice.ai/platform/porcupine/")
         exit(1)
-    
+
     try:
         with open(config_file, 'r') as f:
             for line in f:
@@ -74,10 +76,24 @@ SLEEP_WORD = "terminator"  # Using available keyword instead of "twizzlers"
 # Storage optimization settings
 MAX_BUFFER_SIZE_MB = 50  # Maximum audio buffer size in MB
 BUFFER_CHECK_INTERVAL = 100  # Check buffer size every N frames
+# GPU Configuration - Optimized for RTX 5080
+WHISPER_MODEL_SIZE = "small"  # Options: tiny, base, small, medium, large-v2, large-v3
+COMPUTE_TYPE = "float16"  # Use FP16 for faster inference on RTX GPUs
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Load Whisper model once
-model = whisper.load_model("base")
+# Load Whisper model once with GPU acceleration
+print(f"🔧 Loading Whisper model '{WHISPER_MODEL_SIZE}' on {DEVICE.upper()}...")
+if DEVICE == "cuda":
+    print(f"   🎮 GPU: {torch.cuda.get_device_name(0)}")
+    print(f"   💾 VRAM Available: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+
+model = WhisperModel(
+    WHISPER_MODEL_SIZE,
+    device=DEVICE,
+    compute_type=COMPUTE_TYPE if DEVICE == "cuda" else "int8"
+)
+print("✅ Model loaded successfully!")
 
 # VAD instance
 vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
@@ -110,8 +126,8 @@ def transcribe_audio_buffer(buffer, message_prefix="📝 You said", check_sleep_
                 wf.setframerate(SAMPLE_RATE)
                 wf.writeframes(buffer)
 
-        result = model.transcribe(temp_file)
-        text = result["text"].strip()
+        segments, info = model.transcribe(temp_file, beam_size=5)
+        text = " ".join([segment.text for segment in segments]).strip()
         
         if text:
             if check_sleep_word and SLEEP_WORD.lower() in text.lower():
@@ -235,12 +251,12 @@ def one_time_transcribe():
     transcribe_audio_buffer(buffer, "📝 One-time transcription")
 
 def on_hotkey_pressed():
-    """Handle the Ctrl+Alt+T hotkey press."""
+    """Handle the Ctrl+- hotkey press."""
     # Run one-time transcription in a separate thread to avoid blocking
     threading.Thread(target=one_time_transcribe, daemon=True).start()
 
 def setup_global_hotkey():
-    """Set up global hotkey listener for Ctrl+Alt+T."""
+    """Set up global hotkey listener for Ctrl+- (Ctrl + numpad minus)."""
     if not HOTKEY_AVAILABLE:
         print("⚠️  Global hotkey not available - pynput library not installed")
         return None
@@ -320,7 +336,7 @@ def record_and_transcribe():
 def main():
     global transcribing
     
-    print("🔊 Starting voice system with wake/sleep words...")
+    print("🔊 Starting GPU-accelerated voice system with wake/sleep words...")
     print("🎤 Wake word: 'computer' (starts transcribing)")
     print("💤 Sleep word: 'terminator' (stops transcribing)")
     

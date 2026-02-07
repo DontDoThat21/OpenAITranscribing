@@ -1,0 +1,6 @@
+# Voice-to-Text Configuration File
+# 
+# PORCUPINE_ACCESS_KEY: Get your free key from https://picovoice.ai/platform/porcupine/
+# Replace the key below with your own key
+
+PORCUPINE_ACCESS_KEY=yourkey
